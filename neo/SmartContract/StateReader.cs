@@ -2,6 +2,8 @@
 using Neo.Cryptography.ECC;
 using Neo.IO;
 using Neo.IO.Caching;
+using Neo.SmartContract.Enumerators;
+using Neo.SmartContract.Iterators;
 using Neo.VM;
 using Neo.VM.Types;
 using System;
@@ -71,33 +73,41 @@ namespace Neo.SmartContract
 
         public StateReader()
         {
-            Register("Neo.Runtime.GetTrigger", Runtime_GetTrigger);
-            Register("Neo.Runtime.CheckWitness", Runtime_CheckWitness);
-            Register("Neo.Runtime.Notify", Runtime_Notify);
-            Register("Neo.Runtime.Log", Runtime_Log);
-            Register("Neo.Runtime.GetTime", Runtime_GetTime);
-            Register("Neo.Runtime.Serialize", Runtime_Serialize);
-            Register("Neo.Runtime.Deserialize", Runtime_Deserialize);
-            Register("Neo.Blockchain.GetHeight", Blockchain_GetHeight);
-            Register("Neo.Blockchain.GetHeader", Blockchain_GetHeader);
-            Register("Neo.Blockchain.GetBlock", Blockchain_GetBlock);
-            Register("Neo.Blockchain.GetTransaction", Blockchain_GetTransaction);
+            //Standard Library
+            Register("System.Runtime.GetTrigger", Runtime_GetTrigger);
+            Register("System.Runtime.CheckWitness", Runtime_CheckWitness);
+            Register("System.Runtime.Notify", Runtime_Notify);
+            Register("System.Runtime.Log", Runtime_Log);
+            Register("System.Runtime.GetTime", Runtime_GetTime);
+            Register("System.Runtime.Serialize", Runtime_Serialize);
+            Register("System.Runtime.Deserialize", Runtime_Deserialize);
+            Register("System.Blockchain.GetHeight", Blockchain_GetHeight);
+            Register("System.Blockchain.GetHeader", Blockchain_GetHeader);
+            Register("System.Blockchain.GetBlock", Blockchain_GetBlock);
+            Register("System.Blockchain.GetTransaction", Blockchain_GetTransaction);
+            Register("System.Blockchain.GetTransactionHeight", Blockchain_GetTransactionHeight);
+            Register("System.Blockchain.GetContract", Blockchain_GetContract);
+            Register("System.Header.GetIndex", Header_GetIndex);
+            Register("System.Header.GetHash", Header_GetHash);
+            Register("System.Header.GetPrevHash", Header_GetPrevHash);
+            Register("System.Header.GetTimestamp", Header_GetTimestamp);
+            Register("System.Block.GetTransactionCount", Block_GetTransactionCount);
+            Register("System.Block.GetTransactions", Block_GetTransactions);
+            Register("System.Block.GetTransaction", Block_GetTransaction);
+            Register("System.Transaction.GetHash", Transaction_GetHash);
+            Register("System.Storage.GetContext", Storage_GetContext);
+            Register("System.Storage.GetReadOnlyContext", Storage_GetReadOnlyContext);
+            Register("System.Storage.Get", Storage_Get);
+            Register("System.StorageContext.AsReadOnly", StorageContext_AsReadOnly);
+
+            //Neo Specified
             Register("Neo.Blockchain.GetAccount", Blockchain_GetAccount);
             Register("Neo.Blockchain.GetValidators", Blockchain_GetValidators);
             Register("Neo.Blockchain.GetAsset", Blockchain_GetAsset);
-            Register("Neo.Blockchain.GetContract", Blockchain_GetContract);
-            Register("Neo.Header.GetIndex", Header_GetIndex);
-            Register("Neo.Header.GetHash", Header_GetHash);
             Register("Neo.Header.GetVersion", Header_GetVersion);
-            Register("Neo.Header.GetPrevHash", Header_GetPrevHash);
             Register("Neo.Header.GetMerkleRoot", Header_GetMerkleRoot);
-            Register("Neo.Header.GetTimestamp", Header_GetTimestamp);
             Register("Neo.Header.GetConsensusData", Header_GetConsensusData);
             Register("Neo.Header.GetNextConsensus", Header_GetNextConsensus);
-            Register("Neo.Block.GetTransactionCount", Block_GetTransactionCount);
-            Register("Neo.Block.GetTransactions", Block_GetTransactions);
-            Register("Neo.Block.GetTransaction", Block_GetTransaction);
-            Register("Neo.Transaction.GetHash", Transaction_GetHash);
             Register("Neo.Transaction.GetType", Transaction_GetType);
             Register("Neo.Transaction.GetAttributes", Transaction_GetAttributes);
             Register("Neo.Transaction.GetInputs", Transaction_GetInputs);
@@ -124,34 +134,65 @@ namespace Neo.SmartContract
             Register("Neo.Asset.GetAdmin", Asset_GetAdmin);
             Register("Neo.Asset.GetIssuer", Asset_GetIssuer);
             Register("Neo.Contract.GetScript", Contract_GetScript);
-            Register("Neo.Storage.GetContext", Storage_GetContext);
-            Register("Neo.Storage.Get", Storage_Get);
+            Register("Neo.Contract.IsPayable", Contract_IsPayable);
             Register("Neo.Storage.Find", Storage_Find);
-            Register("Neo.Iterator.Next", Iterator_Next);
+            Register("Neo.Enumerator.Create", Enumerator_Create);
+            Register("Neo.Enumerator.Next", Enumerator_Next);
+            Register("Neo.Enumerator.Value", Enumerator_Value);
+            Register("Neo.Enumerator.Concat", Enumerator_Concat);
+            Register("Neo.Iterator.Create", Iterator_Create);
             Register("Neo.Iterator.Key", Iterator_Key);
-            Register("Neo.Iterator.Value", Iterator_Value);
-            #region Old AntShares APIs
+            Register("Neo.Iterator.Keys", Iterator_Keys);
+            Register("Neo.Iterator.Values", Iterator_Values);
+
+            #region Aliases
+            Register("Neo.Iterator.Next", Enumerator_Next);
+            Register("Neo.Iterator.Value", Enumerator_Value);
+            #endregion
+
+            #region Old APIs
+            Register("Neo.Runtime.GetTrigger", Runtime_GetTrigger);
+            Register("Neo.Runtime.CheckWitness", Runtime_CheckWitness);
             Register("AntShares.Runtime.CheckWitness", Runtime_CheckWitness);
+            Register("Neo.Runtime.Notify", Runtime_Notify);
             Register("AntShares.Runtime.Notify", Runtime_Notify);
+            Register("Neo.Runtime.Log", Runtime_Log);
             Register("AntShares.Runtime.Log", Runtime_Log);
+            Register("Neo.Runtime.GetTime", Runtime_GetTime);
+            Register("Neo.Runtime.Serialize", Runtime_Serialize);
+            Register("Neo.Runtime.Deserialize", Runtime_Deserialize);
+            Register("Neo.Blockchain.GetHeight", Blockchain_GetHeight);
             Register("AntShares.Blockchain.GetHeight", Blockchain_GetHeight);
+            Register("Neo.Blockchain.GetHeader", Blockchain_GetHeader);
             Register("AntShares.Blockchain.GetHeader", Blockchain_GetHeader);
+            Register("Neo.Blockchain.GetBlock", Blockchain_GetBlock);
             Register("AntShares.Blockchain.GetBlock", Blockchain_GetBlock);
+            Register("Neo.Blockchain.GetTransaction", Blockchain_GetTransaction);
             Register("AntShares.Blockchain.GetTransaction", Blockchain_GetTransaction);
+            Register("Neo.Blockchain.GetTransactionHeight", Blockchain_GetTransactionHeight);
             Register("AntShares.Blockchain.GetAccount", Blockchain_GetAccount);
             Register("AntShares.Blockchain.GetValidators", Blockchain_GetValidators);
             Register("AntShares.Blockchain.GetAsset", Blockchain_GetAsset);
+            Register("Neo.Blockchain.GetContract", Blockchain_GetContract);
             Register("AntShares.Blockchain.GetContract", Blockchain_GetContract);
+            Register("Neo.Header.GetIndex", Header_GetIndex);
+            Register("Neo.Header.GetHash", Header_GetHash);
             Register("AntShares.Header.GetHash", Header_GetHash);
             Register("AntShares.Header.GetVersion", Header_GetVersion);
+            Register("Neo.Header.GetPrevHash", Header_GetPrevHash);
             Register("AntShares.Header.GetPrevHash", Header_GetPrevHash);
             Register("AntShares.Header.GetMerkleRoot", Header_GetMerkleRoot);
+            Register("Neo.Header.GetTimestamp", Header_GetTimestamp);
             Register("AntShares.Header.GetTimestamp", Header_GetTimestamp);
             Register("AntShares.Header.GetConsensusData", Header_GetConsensusData);
             Register("AntShares.Header.GetNextConsensus", Header_GetNextConsensus);
+            Register("Neo.Block.GetTransactionCount", Block_GetTransactionCount);
             Register("AntShares.Block.GetTransactionCount", Block_GetTransactionCount);
+            Register("Neo.Block.GetTransactions", Block_GetTransactions);
             Register("AntShares.Block.GetTransactions", Block_GetTransactions);
+            Register("Neo.Block.GetTransaction", Block_GetTransaction);
             Register("AntShares.Block.GetTransaction", Block_GetTransaction);
+            Register("Neo.Transaction.GetHash", Transaction_GetHash);
             Register("AntShares.Transaction.GetHash", Transaction_GetHash);
             Register("AntShares.Transaction.GetType", Transaction_GetType);
             Register("AntShares.Transaction.GetAttributes", Transaction_GetAttributes);
@@ -177,8 +218,12 @@ namespace Neo.SmartContract
             Register("AntShares.Asset.GetAdmin", Asset_GetAdmin);
             Register("AntShares.Asset.GetIssuer", Asset_GetIssuer);
             Register("AntShares.Contract.GetScript", Contract_GetScript);
+            Register("Neo.Storage.GetContext", Storage_GetContext);
             Register("AntShares.Storage.GetContext", Storage_GetContext);
+            Register("Neo.Storage.GetReadOnlyContext", Storage_GetReadOnlyContext);
+            Register("Neo.Storage.Get", Storage_Get);
             Register("AntShares.Storage.Get", Storage_Get);
+            Register("Neo.StorageContext.AsReadOnly", StorageContext_AsReadOnly);
             #endregion
         }
 
@@ -281,6 +326,15 @@ namespace Neo.SmartContract
                     foreach (StackItem subitem in array)
                         SerializeStackItem(subitem, writer);
                     break;
+                case Map map:
+                    writer.Write((byte)StackItemType.Map);
+                    writer.WriteVarInt(map.Count);
+                    foreach (var pair in map)
+                    {
+                        SerializeStackItem(pair.Key, writer);
+                        SerializeStackItem(pair.Value, writer);
+                    }
+                    break;
             }
         }
 
@@ -316,13 +370,27 @@ namespace Neo.SmartContract
                     return new Integer(new BigInteger(reader.ReadVarBytes()));
                 case StackItemType.Array:
                 case StackItemType.Struct:
-                    VMArray array = type == StackItemType.Struct ? new Struct() : new VMArray();
-                    ulong count = reader.ReadVarInt();
-                    while (count-- > 0)
-                        array.Add(DeserializeStackItem(reader));
-                    return array;
+                    {
+                        VMArray array = type == StackItemType.Struct ? new Struct() : new VMArray();
+                        ulong count = reader.ReadVarInt();
+                        while (count-- > 0)
+                            array.Add(DeserializeStackItem(reader));
+                        return array;
+                    }
+                case StackItemType.Map:
+                    {
+                        Map map = new Map();
+                        ulong count = reader.ReadVarInt();
+                        while (count-- > 0)
+                        {
+                            StackItem key = DeserializeStackItem(reader);
+                            StackItem value = DeserializeStackItem(reader);
+                            map[key] = value;
+                        }
+                        return map;
+                    }
                 default:
-                    return null;
+                    throw new FormatException();
             }
         }
 
@@ -332,8 +400,19 @@ namespace Neo.SmartContract
             using (MemoryStream ms = new MemoryStream(data, false))
             using (BinaryReader reader = new BinaryReader(ms))
             {
-                StackItem item = DeserializeStackItem(reader);
-                if (item == null) return false;
+                StackItem item;
+                try
+                {
+                    item = DeserializeStackItem(reader);
+                }
+                catch (FormatException)
+                {
+                    return false;
+                }
+                catch (IOException)
+                {
+                    return false;
+                }
                 engine.EvaluationStack.Push(item);
             }
             return true;
@@ -420,6 +499,18 @@ namespace Neo.SmartContract
             return true;
         }
 
+        protected virtual bool Blockchain_GetTransactionHeight(ExecutionEngine engine)
+        {
+            byte[] hash = engine.EvaluationStack.Pop().GetByteArray();
+            int height;
+            if (Blockchain.Default == null)
+                height = -1;
+            else
+                Blockchain.Default.GetTransaction(new UInt256(hash), out height);
+            engine.EvaluationStack.Push(height);
+            return true;
+        }
+
         protected virtual bool Blockchain_GetAccount(ExecutionEngine engine)
         {
             UInt160 hash = new UInt160(engine.EvaluationStack.Pop().GetByteArray());
@@ -448,8 +539,10 @@ namespace Neo.SmartContract
         {
             UInt160 hash = new UInt160(engine.EvaluationStack.Pop().GetByteArray());
             ContractState contract = Contracts.TryGet(hash);
-            if (contract == null) return false;
-            engine.EvaluationStack.Push(StackItem.FromInterface(contract));
+            if (contract == null)
+                engine.EvaluationStack.Push(new byte[0]);
+            else
+                engine.EvaluationStack.Push(StackItem.FromInterface(contract));
             return true;
         }
 
@@ -914,11 +1007,34 @@ namespace Neo.SmartContract
             return false;
         }
 
+        protected virtual bool Contract_IsPayable(ExecutionEngine engine)
+        {
+            if (engine.EvaluationStack.Pop() is InteropInterface _interface)
+            {
+                ContractState contract = _interface.GetInterface<ContractState>();
+                if (contract == null) return false;
+                engine.EvaluationStack.Push(contract.Payable);
+                return true;
+            }
+            return false;
+        }
+
         protected virtual bool Storage_GetContext(ExecutionEngine engine)
         {
             engine.EvaluationStack.Push(StackItem.FromInterface(new StorageContext
             {
-                ScriptHash = new UInt160(engine.CurrentContext.ScriptHash)
+                ScriptHash = new UInt160(engine.CurrentContext.ScriptHash),
+                IsReadOnly = false
+            }));
+            return true;
+        }
+
+        protected virtual bool Storage_GetReadOnlyContext(ExecutionEngine engine)
+        {
+            engine.EvaluationStack.Push(StackItem.FromInterface(new StorageContext
+            {
+                ScriptHash = new UInt160(engine.CurrentContext.ScriptHash),
+                IsReadOnly = true
             }));
             return true;
         }
@@ -948,8 +1064,23 @@ namespace Neo.SmartContract
                 StorageContext context = _interface.GetInterface<StorageContext>();
                 if (!CheckStorageContext(context)) return false;
                 byte[] prefix = engine.EvaluationStack.Pop().GetByteArray();
-                prefix = context.ScriptHash.ToArray().Concat(prefix).ToArray();
-                StorageIterator iterator = new StorageIterator(Storages.Find(prefix).GetEnumerator());
+                byte[] prefix_key;
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    int index = 0;
+                    int remain = prefix.Length;
+                    while (remain >= 16)
+                    {
+                        ms.Write(prefix, index, 16);
+                        ms.WriteByte(0);
+                        index += 16;
+                        remain -= 16;
+                    }
+                    if (remain > 0)
+                        ms.Write(prefix, index, remain);
+                    prefix_key = context.ScriptHash.ToArray().Concat(ms.ToArray()).ToArray();
+                }
+                StorageIterator iterator = new StorageIterator(Storages.Find(prefix_key).Where(p => p.Key.Key.Take(prefix.Length).SequenceEqual(prefix)).GetEnumerator());
                 engine.EvaluationStack.Push(StackItem.FromInterface(iterator));
                 disposables.Add(iterator);
                 return true;
@@ -957,12 +1088,73 @@ namespace Neo.SmartContract
             return false;
         }
 
-        protected virtual bool Iterator_Next(ExecutionEngine engine)
+        protected virtual bool StorageContext_AsReadOnly(ExecutionEngine engine)
         {
             if (engine.EvaluationStack.Pop() is InteropInterface _interface)
             {
-                Iterator iterator = _interface.GetInterface<Iterator>();
-                engine.EvaluationStack.Push(iterator.Next());
+                StorageContext context = _interface.GetInterface<StorageContext>();
+                if (!context.IsReadOnly)
+                    context = new StorageContext
+                    {
+                        ScriptHash = context.ScriptHash,
+                        IsReadOnly = true
+                    };
+                engine.EvaluationStack.Push(StackItem.FromInterface(context));
+                return true;
+            }
+            return false;
+        }
+
+        protected virtual bool Enumerator_Create(ExecutionEngine engine)
+        {
+            if (engine.EvaluationStack.Pop() is VMArray array)
+            {
+                IEnumerator enumerator = new ArrayWrapper(array);
+                engine.EvaluationStack.Push(StackItem.FromInterface(enumerator));
+                return true;
+            }
+            return false;
+        }
+
+        protected virtual bool Enumerator_Next(ExecutionEngine engine)
+        {
+            if (engine.EvaluationStack.Pop() is InteropInterface _interface)
+            {
+                IEnumerator enumerator = _interface.GetInterface<IEnumerator>();
+                engine.EvaluationStack.Push(enumerator.Next());
+                return true;
+            }
+            return false;
+        }
+
+        protected virtual bool Enumerator_Value(ExecutionEngine engine)
+        {
+            if (engine.EvaluationStack.Pop() is InteropInterface _interface)
+            {
+                IEnumerator enumerator = _interface.GetInterface<IEnumerator>();
+                engine.EvaluationStack.Push(enumerator.Value());
+                return true;
+            }
+            return false;
+        }
+
+        protected virtual bool Enumerator_Concat(ExecutionEngine engine)
+        {
+            if (!(engine.EvaluationStack.Pop() is InteropInterface _interface1)) return false;
+            if (!(engine.EvaluationStack.Pop() is InteropInterface _interface2)) return false;
+            IEnumerator first = _interface1.GetInterface<IEnumerator>();
+            IEnumerator second = _interface2.GetInterface<IEnumerator>();
+            IEnumerator result = new ConcatenatedEnumerator(first, second);
+            engine.EvaluationStack.Push(StackItem.FromInterface(result));
+            return true;
+        }
+
+        protected virtual bool Iterator_Create(ExecutionEngine engine)
+        {
+            if (engine.EvaluationStack.Pop() is Map map)
+            {
+                IIterator iterator = new MapWrapper(map);
+                engine.EvaluationStack.Push(StackItem.FromInterface(iterator));
                 return true;
             }
             return false;
@@ -972,19 +1164,30 @@ namespace Neo.SmartContract
         {
             if (engine.EvaluationStack.Pop() is InteropInterface _interface)
             {
-                Iterator iterator = _interface.GetInterface<Iterator>();
+                IIterator iterator = _interface.GetInterface<IIterator>();
                 engine.EvaluationStack.Push(iterator.Key());
                 return true;
             }
             return false;
         }
 
-        protected virtual bool Iterator_Value(ExecutionEngine engine)
+        protected virtual bool Iterator_Keys(ExecutionEngine engine)
         {
             if (engine.EvaluationStack.Pop() is InteropInterface _interface)
             {
-                Iterator iterator = _interface.GetInterface<Iterator>();
-                engine.EvaluationStack.Push(iterator.Value());
+                IIterator iterator = _interface.GetInterface<IIterator>();
+                engine.EvaluationStack.Push(StackItem.FromInterface(new IteratorKeysWrapper(iterator)));
+                return true;
+            }
+            return false;
+        }
+
+        protected virtual bool Iterator_Values(ExecutionEngine engine)
+        {
+            if (engine.EvaluationStack.Pop() is InteropInterface _interface)
+            {
+                IIterator iterator = _interface.GetInterface<IIterator>();
+                engine.EvaluationStack.Push(StackItem.FromInterface(new IteratorValuesWrapper(iterator)));
                 return true;
             }
             return false;

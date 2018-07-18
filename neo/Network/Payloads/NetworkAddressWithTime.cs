@@ -6,7 +6,7 @@ using System.Net;
 
 namespace Neo.Network.Payloads
 {
-    internal class NetworkAddressWithTime : ISerializable
+    public class NetworkAddressWithTime : ISerializable
     {
         public const ulong NODE_NETWORK = 1;
 
@@ -43,7 +43,7 @@ namespace Neo.Network.Payloads
         {
             writer.Write(Timestamp);
             writer.Write(Services);
-            writer.Write(EndPoint.Address.GetAddressBytes());
+            writer.Write(EndPoint.Address.MapToIPv6().GetAddressBytes());
             writer.Write(BitConverter.GetBytes((ushort)EndPoint.Port).Reverse().ToArray());
         }
     }

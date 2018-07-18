@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Neo.Core;
 using Neo.IO;
 using Neo.IO.Caching;
+using Neo.Network.Payloads;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -13,6 +14,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -27,12 +29,15 @@ namespace Neo.Network
 
         public const uint ProtocolVersion = 0;
         private const int ConnectedMax = 10;
+        private const int DesiredAvailablePeers = (int)(ConnectedMax * 1.5);
         private const int UnconnectedMax = 1000;
-        public const int MemoryPoolSize = 30000;
+        public const int MemoryPoolSize = 50000;
+        internal static readonly TimeSpan HashesExpiration = TimeSpan.FromSeconds(30);
+        private DateTime LastBlockReceived = DateTime.UtcNow;
 
         private static readonly Dictionary<UInt256, Transaction> mem_pool = new Dictionary<UInt256, Transaction>();
         private readonly HashSet<Transaction> temp_pool = new HashSet<Transaction>();
-        internal static readonly HashSet<UInt256> KnownHashes = new HashSet<UInt256>();
+        internal static readonly Dictionary<UInt256, DateTime> KnownHashes = new Dictionary<UInt256, DateTime>();
         internal readonly RelayCache RelayCache = new RelayCache(100);
 
         private static readonly HashSet<IPEndPoint> unconnectedPeers = new HashSet<IPEndPoint>();
@@ -79,7 +84,7 @@ namespace Neo.Network
                     Name = "LocalNode.AddTransactionLoop"
                 };
             }
-            this.UserAgent = string.Format("/NEO:{0}/", GetType().GetTypeInfo().Assembly.GetName().Version.ToString(3));
+            this.UserAgent = string.Format("/NEO:{0}/", Assembly.GetExecutingAssembly().GetVersion());
             Blockchain.PersistCompleted += Blockchain_PersistCompleted;
         }
 
@@ -112,13 +117,16 @@ namespace Neo.Network
         private static bool AddTransaction(Transaction tx)
         {
             if (Blockchain.Default == null) return false;
-            lock (mem_pool)
+            lock (Blockchain.Default.PersistLock)
             {
-                if (mem_pool.ContainsKey(tx.Hash)) return false;
-                if (Blockchain.Default.ContainsTransaction(tx.Hash)) return false;
-                if (!tx.Verify(mem_pool.Values)) return false;
-                mem_pool.Add(tx.Hash, tx);
-                CheckMemPool();
+                lock (mem_pool)
+                {
+                    if (mem_pool.ContainsKey(tx.Hash)) return false;
+                    if (Blockchain.Default.ContainsTransaction(tx.Hash)) return false;
+                    if (!tx.Verify(mem_pool.Values)) return false;
+                    mem_pool.Add(tx.Hash, tx);
+                    CheckMemPool();
+                }
             }
             return true;
         }
@@ -136,25 +144,47 @@ namespace Neo.Network
                     temp_pool.Clear();
                 }
                 ConcurrentBag<Transaction> verified = new ConcurrentBag<Transaction>();
-                lock (mem_pool)
+                lock (Blockchain.Default.PersistLock)
                 {
-                    transactions = transactions.Where(p => !mem_pool.ContainsKey(p.Hash) && !Blockchain.Default.ContainsTransaction(p.Hash)).ToArray();
-                    if (transactions.Length == 0) continue;
-
-                    Transaction[] tmpool = mem_pool.Values.Concat(transactions).ToArray();
-
-                    transactions.AsParallel().ForAll(tx =>
+                    lock (mem_pool)
                     {
-                        if (tx.Verify(tmpool))
-                            verified.Add(tx);
-                    });
+                        transactions = transactions.Where(p => !mem_pool.ContainsKey(p.Hash) && !Blockchain.Default.ContainsTransaction(p.Hash)).ToArray();
 
-                    if (verified.Count == 0) continue;
+                        if (transactions.Length == 0)
+                            continue;
 
-                    foreach (Transaction tx in verified)
-                        mem_pool.Add(tx.Hash, tx);
+                        Transaction[] tmpool = mem_pool.Values.Concat(transactions).ToArray();
 
-                    CheckMemPool();
+                        ParallelOptions po = new ParallelOptions();
+                        po.CancellationToken = Blockchain.Default.VerificationCancellationToken.Token;
+                        po.MaxDegreeOfParallelism = System.Environment.ProcessorCount;
+
+                        try
+                        {
+                            Parallel.ForEach(transactions.AsParallel(), po, tx =>
+                            {
+                                if (tx.Verify(tmpool))
+                                    verified.Add(tx);
+                            });
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            lock (temp_pool)
+                            {
+                                foreach (Transaction tx in transactions)
+                                    temp_pool.Add(tx);
+                            }
+
+                            continue;
+                        }
+
+                        if (verified.Count == 0) continue;
+
+                        foreach (Transaction tx in verified)
+                            mem_pool.Add(tx.Hash, tx);
+
+                        CheckMemPool();
+                    }
                 }
                 RelayDirectly(verified);
                 if (InventoryReceived != null)
@@ -167,43 +197,98 @@ namespace Neo.Network
         {
             lock (KnownHashes)
             {
-                KnownHashes.ExceptWith(hashes);
+                foreach (UInt256 hash in hashes)
+                    KnownHashes.Remove(hash);
             }
         }
 
         private void Blockchain_PersistCompleted(object sender, Block block)
         {
             Transaction[] remain;
+            var millisSinceLastBlock = TimeSpan.FromTicks(DateTimeOffset.UtcNow.Ticks)
+                .Subtract(TimeSpan.FromTicks(LastBlockReceived.Ticks)).TotalMilliseconds;
+
             lock (mem_pool)
             {
+                // Remove the transactions that made it into the block
                 foreach (Transaction tx in block.Transactions)
-                {
                     mem_pool.Remove(tx.Hash);
-                }
                 if (mem_pool.Count == 0) return;
 
                 remain = mem_pool.Values.ToArray();
                 mem_pool.Clear();
+                
+                if (millisSinceLastBlock > 10000)
+                {
+                    ConcurrentBag<Transaction> verified = new ConcurrentBag<Transaction>();
+                    // Reverify the remaining transactions in the mem_pool
+                    remain.AsParallel().ForAll(tx =>
+                    {
+                        if (tx.Verify(remain))
+                            verified.Add(tx);
+                    });
+                
+                    // Note, when running 
+                    foreach (Transaction tx in verified)
+                        mem_pool.Add(tx.Hash, tx);                    
+                }
             }
+            LastBlockReceived = DateTime.UtcNow;
+            
             lock (temp_pool)
             {
-                temp_pool.UnionWith(remain);
+                if (millisSinceLastBlock > 10000)
+                {
+                    if (temp_pool.Count > 0)
+                        new_tx_event.Set();
+                }
+                else
+                {
+                    temp_pool.UnionWith(remain);
+                    new_tx_event.Set();
+                }
             }
-            new_tx_event.Set();
+        }
+
+        private static bool CheckKnownHashes(UInt256 hash)
+        {
+            DateTime now = DateTime.UtcNow;
+            lock (KnownHashes)
+            {
+                if (KnownHashes.TryGetValue(hash, out DateTime time))
+                {
+                    if (now - time <= HashesExpiration)
+                        return false;
+                }
+                KnownHashes[hash] = now;
+                if (KnownHashes.Count > 1000000)
+                {
+                    UInt256[] expired = KnownHashes.Where(p => now - p.Value > HashesExpiration).Select(p => p.Key).ToArray();
+                    foreach (UInt256 key in expired)
+                        KnownHashes.Remove(key);
+                }
+                return true;
+            }
         }
 
         private static void CheckMemPool()
         {
             if (mem_pool.Count <= MemoryPoolSize) return;
-            UInt256[] hashes = mem_pool.Values.AsParallel().OrderBy(p => p.NetworkFee / p.Size).Take(mem_pool.Count - MemoryPoolSize).Select(p => p.Hash).ToArray();
+
+            UInt256[] hashes = mem_pool.Values.AsParallel()
+                .OrderBy(p => p.NetworkFee / p.Size)
+                .ThenBy(p => new BigInteger(p.Hash.ToArray()))
+                .Take(mem_pool.Count - MemoryPoolSize)
+                .Select(p => p.Hash)
+                .ToArray();
+
             foreach (UInt256 hash in hashes)
                 mem_pool.Remove(hash);
         }
 
-        public async Task ConnectToPeerAsync(string hostNameOrAddress, int port)
+        public async Task<IPEndPoint> GetIPEndpointFromHostPortAsync(string hostNameOrAddress, int port)
         {
-            IPAddress ipAddress;
-            if (IPAddress.TryParse(hostNameOrAddress, out ipAddress))
+            if (IPAddress.TryParse(hostNameOrAddress, out IPAddress ipAddress))
             {
                 ipAddress = ipAddress.MapToIPv6();
             }
@@ -216,17 +301,26 @@ namespace Neo.Network
                 }
                 catch (SocketException)
                 {
-                    return;
+                    return null;
                 }
                 ipAddress = entry.AddressList.FirstOrDefault(p => p.AddressFamily == AddressFamily.InterNetwork || p.IsIPv6Teredo)?.MapToIPv6();
-                if (ipAddress == null) return;
+                if (ipAddress == null) return null;
             }
-            await ConnectToPeerAsync(new IPEndPoint(ipAddress, port));
+
+            return new IPEndPoint(ipAddress, port);
+        }
+
+        public async Task ConnectToPeerAsync(string hostNameOrAddress, int port)
+        {
+            IPEndPoint ipEndpoint = await GetIPEndpointFromHostPortAsync(hostNameOrAddress, port);
+
+            if (ipEndpoint == null) return;
+            await ConnectToPeerAsync(ipEndpoint);
         }
 
         public async Task ConnectToPeerAsync(IPEndPoint remoteEndpoint)
         {
-            if (remoteEndpoint.Port == Port && LocalAddresses.Contains(remoteEndpoint.Address)) return;
+            if (remoteEndpoint.Port == Port && LocalAddresses.Contains(remoteEndpoint.Address.MapToIPv6())) return;
             lock (unconnectedPeers)
             {
                 unconnectedPeers.Remove(remoteEndpoint);
@@ -243,45 +337,127 @@ namespace Neo.Network
             }
         }
 
+        private IEnumerable<IPEndPoint> GetIPEndPointsFromSeedList(int seedsToTake)
+        {
+            if (seedsToTake > 0)
+            {
+                Random rand = new Random();
+                foreach (string hostAndPort in Settings.Default.SeedList.OrderBy(p => rand.Next()))
+                {
+                    if (seedsToTake == 0) break;
+                    string[] p = hostAndPort.Split(':');
+                    IPEndPoint seed;
+                    try
+                    {
+                        seed = GetIPEndpointFromHostPortAsync(p[0], int.Parse(p[1])).Result;
+                    }
+                    catch (AggregateException)
+                    {
+                        continue;
+                    }
+                    if (seed == null) continue;
+                    seedsToTake--;
+                    yield return seed;
+                }
+            }
+        }
+
         private void ConnectToPeersLoop()
         {
+            Dictionary<Task, IPAddress> tasksDict = new Dictionary<Task, IPAddress>();
+            DateTime lastSufficientPeersTimestamp = DateTime.UtcNow;
+            Dictionary<IPAddress, Task> currentlyConnectingIPs = new Dictionary<IPAddress, Task>();
+
+            void connectToPeers(IEnumerable<IPEndPoint> ipEndPoints)
+            {
+                foreach (var ipEndPoint in ipEndPoints)
+                {
+                    // Protect from the case same IP is in the endpoint array twice
+                    if (currentlyConnectingIPs.ContainsKey(ipEndPoint.Address))
+                        continue;
+
+                    var connectTask = ConnectToPeerAsync(ipEndPoint);
+
+                    // Completed tasks that run synchronously may use a non-unique cached task object.
+                    if (connectTask.IsCompleted)
+                        continue;
+
+                    tasksDict.Add(connectTask, ipEndPoint.Address);
+                    currentlyConnectingIPs.Add(ipEndPoint.Address, connectTask);
+                }
+            }
+
             while (!cancellationTokenSource.IsCancellationRequested)
             {
                 int connectedCount = connectedPeers.Count;
                 int unconnectedCount = unconnectedPeers.Count;
                 if (connectedCount < ConnectedMax)
                 {
-                    Task[] tasks = { };
                     if (unconnectedCount > 0)
                     {
                         IPEndPoint[] endpoints;
                         lock (unconnectedPeers)
                         {
-                            endpoints = unconnectedPeers.Take(ConnectedMax - connectedCount).ToArray();
+                            endpoints = unconnectedPeers.Where(x => !currentlyConnectingIPs.ContainsKey(x.Address))
+                                .Take(ConnectedMax - connectedCount).ToArray();
                         }
-                        tasks = endpoints.Select(p => ConnectToPeerAsync(p)).ToArray();
+
+                        connectToPeers(endpoints);
                     }
-                    else if (connectedCount > 0)
+
+                    if (connectedCount > 0)
                     {
-                        lock (connectedPeers)
+                        if (unconnectedCount + connectedCount < DesiredAvailablePeers)
                         {
-                            foreach (RemoteNode node in connectedPeers)
-                                node.RequestPeers();
+                            lock (connectedPeers)
+                            {
+                                foreach (RemoteNode node in connectedPeers)
+                                    node.RequestPeers();
+                            }
+
+                            if (lastSufficientPeersTimestamp < DateTime.UtcNow.AddSeconds(-180))
+                            {
+                                IEnumerable<IPEndPoint> endpoints = GetIPEndPointsFromSeedList(2);
+                                connectToPeers(endpoints);
+                                lastSufficientPeersTimestamp = DateTime.UtcNow;
+                            }
+                        }
+                        else
+                        {
+                            lastSufficientPeersTimestamp = DateTime.UtcNow;
                         }
                     }
                     else
                     {
-                        tasks = Settings.Default.SeedList.OfType<string>().Select(p => p.Split(':')).Select(p => ConnectToPeerAsync(p[0], int.Parse(p[1]))).ToArray();
-                    }
-                    try
-                    {
-                        Task.WaitAll(tasks, cancellationTokenSource.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
+                        IEnumerable<IPEndPoint> endpoints = GetIPEndPointsFromSeedList(5);
+                        connectToPeers(endpoints);
+                        lastSufficientPeersTimestamp = DateTime.UtcNow;
                     }
                 }
+
+                try
+                {
+                    var tasksArray = tasksDict.Keys.ToArray();
+                    if (tasksArray.Length > 0)
+                    {
+                        Task.WaitAny(tasksArray, 5000, cancellationTokenSource.Token);
+
+                        foreach (var task in tasksArray)
+                        {
+                            if (!task.IsCompleted) continue;
+                            if (tasksDict.TryGetValue(task, out IPAddress ip))
+                                currentlyConnectingIPs.Remove(ip);
+                            // Clean-up task no longer running.
+                            tasksDict.Remove(task);
+                            task.Dispose();
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
                 for (int i = 0; i < 50 && !cancellationTokenSource.IsCancellationRequested; i++)
                 {
                     Thread.Sleep(100);
@@ -304,7 +480,12 @@ namespace Neo.Network
                 cancellationTokenSource.Cancel();
                 if (started > 0)
                 {
-                    Blockchain.PersistCompleted -= Blockchain_PersistCompleted;
+                    // Ensure any outstanding calls to Blockchain_PersistCompleted are not in progress
+                    lock (Blockchain.Default.PersistLock)
+                    {
+                        Blockchain.PersistCompleted -= Blockchain_PersistCompleted;
+                    }
+
                     if (listener != null) listener.Stop();
                     if (!connectThread.ThreadState.HasFlag(ThreadState.Unstarted)) connectThread.Join();
                     lock (unconnectedPeers)
@@ -323,20 +504,21 @@ namespace Neo.Network
                         nodes = connectedPeers.ToArray();
                     }
                     Task.WaitAll(nodes.Select(p => Task.Run(() => p.Disconnect(false))).ToArray());
+
                     new_tx_event.Set();
                     if (poolThread?.ThreadState.HasFlag(ThreadState.Unstarted) == false)
                         poolThread.Join();
+
                     new_tx_event.Dispose();
                 }
             }
         }
 
-        public static IEnumerable<Transaction> GetMemoryPool()
+        public static Transaction[] GetMemoryPool()
         {
             lock (mem_pool)
             {
-                foreach (Transaction tx in mem_pool.Values)
-                    yield return tx;
+                return mem_pool.Values.ToArray();
             }
         }
 
@@ -356,6 +538,16 @@ namespace Neo.Network
                     return null;
                 return tx;
             }
+        }
+
+        internal void RequestGetBlocks()
+        {
+            RemoteNode[] nodes = GetRemoteNodes();
+
+            GetBlocksPayload payload = GetBlocksPayload.Create(Blockchain.Default.CurrentBlockHash);
+
+            foreach (RemoteNode node in nodes)
+                node.EnqueueMessage("getblocks", payload);
         }
 
         private static bool IsIntranetAddress(IPAddress address)
@@ -407,10 +599,7 @@ namespace Neo.Network
         public bool Relay(IInventory inventory)
         {
             if (inventory is MinerTransaction) return false;
-            lock (KnownHashes)
-            {
-                if (!KnownHashes.Add(inventory.Hash)) return false;
-            }
+            if (!CheckKnownHashes(inventory.Hash)) return false;
             InventoryReceivingEventArgs args = new InventoryReceivingEventArgs(inventory);
             InventoryReceiving?.Invoke(this, args);
             if (args.Cancel) return false;
@@ -485,10 +674,7 @@ namespace Neo.Network
             if (inventory is Transaction tx && tx.Type != TransactionType.ClaimTransaction && tx.Type != TransactionType.IssueTransaction)
             {
                 if (Blockchain.Default == null) return;
-                lock (KnownHashes)
-                {
-                    if (!KnownHashes.Add(inventory.Hash)) return;
-                }
+                if (!CheckKnownHashes(inventory.Hash)) return;
                 InventoryReceivingEventArgs args = new InventoryReceivingEventArgs(inventory);
                 InventoryReceiving?.Invoke(this, args);
                 if (args.Cancel) return;
@@ -570,7 +756,7 @@ namespace Neo.Network
                     {
                         try
                         {
-                            LocalAddresses.Add(await UPnP.GetExternalIPAsync());
+                            LocalAddresses.Add((await UPnP.GetExternalIPAsync()).MapToIPv6());
                             if (port > 0)
                                 await UPnP.ForwardPortAsync(port, ProtocolType.Tcp, "NEO");
                             if (ws_port > 0)

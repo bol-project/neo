@@ -46,7 +46,7 @@ namespace Neo.Implementations.Blockchains.LevelDB
             Version version;
             Slice value;
             db = DB.Open(path, new Options { CreateIfMissing = true });
-            if (db.TryGet(ReadOptions.Default, SliceBuilder.Begin(DataEntryPrefix.SYS_Version), out value) && Version.TryParse(value.ToString(), out version) && version >= Version.Parse("2.6.0"))
+            if (db.TryGet(ReadOptions.Default, SliceBuilder.Begin(DataEntryPrefix.SYS_Version), out value) && Version.TryParse(value.ToString(), out version) && version >= Version.Parse("2.7.4"))
             {
                 ReadOptions options = new ReadOptions { FillCache = false };
                 value = db.Get(options, SliceBuilder.Begin(DataEntryPrefix.SYS_CurrentBlock));
@@ -112,6 +112,7 @@ namespace Neo.Implementations.Blockchains.LevelDB
             }
             thread_persistence = new Thread(PersistBlocks);
             thread_persistence.Name = "LevelDBBlockchain.PersistBlocks";
+            thread_persistence.Priority = ThreadPriority.AboveNormal;
             thread_persistence.Start();
         }
 
@@ -138,6 +139,24 @@ namespace Neo.Implementations.Blockchains.LevelDB
                     new_block_event.Set();
             }
             return true;
+        }
+
+        public void AddBlockDirectly(Block block)
+        {
+            if (block.Index != Height + 1)
+                throw new InvalidOperationException();
+            if (block.Index == header_index.Count)
+            {
+                WriteBatch batch = new WriteBatch();
+                OnAddHeader(block.Header, batch);
+                db.Write(WriteOptions.Default, batch);
+            }
+
+            lock (PersistLock)
+            {
+                Persist(block);
+                OnPersistCompleted(block);
+            }
         }
 
         protected internal override void AddHeaders(IEnumerable<Header> headers)
@@ -238,7 +257,7 @@ namespace Neo.Implementations.Blockchains.LevelDB
         public override IEnumerable<ValidatorState> GetEnrollments()
         {
             HashSet<ECPoint> sv = new HashSet<ECPoint>(StandbyValidators);
-            return db.Find<ValidatorState>(ReadOptions.Default, DataEntryPrefix.ST_Validator).Where(p => (p.Registered && p.Votes > Fixed8.Zero) || sv.Contains(p.PublicKey));
+            return db.Find<ValidatorState>(ReadOptions.Default, DataEntryPrefix.ST_Validator).Where(p => p.Registered || sv.Contains(p.PublicKey));
         }
 
         public override Header GetHeader(uint height)
@@ -441,6 +460,7 @@ namespace Neo.Implementations.Blockchains.LevelDB
             DbCache<UInt160, ContractState> contracts = new DbCache<UInt160, ContractState>(db, DataEntryPrefix.ST_Contract, batch);
             DbCache<StorageKey, StorageItem> storages = new DbCache<StorageKey, StorageItem>(db, DataEntryPrefix.ST_Storage, batch);
             DbMetaDataCache<ValidatorsCountState> validators_count = new DbMetaDataCache<ValidatorsCountState>(db, DataEntryPrefix.IX_ValidatorsCount);
+            CachedScriptTable script_table = new CachedScriptTable(contracts);
             long amount_sysfee = GetSysFeeAmount(block.PrevHash) + (long)block.Transactions.Sum(p => p.SystemFee);
             batch.Put(SliceBuilder.Begin(DataEntryPrefix.DATA_Block).Add(block.Hash), SliceBuilder.Begin().Add(amount_sysfee).Add(block.Trim()));
             foreach (Transaction tx in block.Transactions)
@@ -495,6 +515,7 @@ namespace Neo.Implementations.Blockchains.LevelDB
                         account.Balances[out_prev.AssetId] -= out_prev.Value;
                     }
                 }
+                List<ApplicationExecutionResult> execution_results = new List<ApplicationExecutionResult>();
                 switch (tx)
                 {
 #pragma warning disable CS0612
@@ -562,7 +583,6 @@ namespace Neo.Implementations.Blockchains.LevelDB
                         break;
 #pragma warning restore CS0612
                     case InvocationTransaction tx_invocation:
-                        CachedScriptTable script_table = new CachedScriptTable(contracts);
                         using (StateMachine service = new StateMachine(block, accounts, assets, contracts, storages))
                         {
                             ApplicationEngine engine = new ApplicationEngine(TriggerType.Application, tx_invocation, script_table, service, tx_invocation.Gas);
@@ -571,10 +591,24 @@ namespace Neo.Implementations.Blockchains.LevelDB
                             {
                                 service.Commit();
                             }
-                            ApplicationExecuted?.Invoke(this, new ApplicationExecutedEventArgs(tx_invocation, service.Notifications.ToArray(), engine));
+                            execution_results.Add(new ApplicationExecutionResult
+                            {
+                                Trigger = TriggerType.Application,
+                                ScriptHash = tx_invocation.Script.ToScriptHash(),
+                                VMState = engine.State,
+                                GasConsumed = engine.GasConsumed,
+                                Stack = engine.EvaluationStack.ToArray(),
+                                Notifications = service.Notifications.ToArray()
+                            });
                         }
                         break;
                 }
+                if (execution_results.Count > 0)
+                    ApplicationExecuted?.Invoke(this, new ApplicationExecutedEventArgs
+                    {
+                        Transaction = tx,
+                        ExecutionResults = execution_results.ToArray()
+                    });
             }
             accounts.DeleteWhere((k, v) => !v.IsFrozen && v.Votes.Length == 0 && v.Balances.All(p => p.Value <= Fixed8.Zero));
             accounts.Commit();
@@ -611,12 +645,22 @@ namespace Neo.Implementations.Blockchains.LevelDB
                         if (!block_cache.TryGetValue(hash, out block))
                             break;
                     }
-                    Persist(block);
-                    OnPersistCompleted(block);
+
+                    VerificationCancellationToken.Cancel();
+                    lock (PersistLock)
+                    {
+                        Persist(block);
+                        OnPersistCompleted(block);
+                        // Reset cancellation token.
+                        VerificationCancellationToken = new CancellationTokenSource();
+                    }
+
                     lock (block_cache)
                     {
                         block_cache.Remove(hash);
                     }
+
+                    OnPersistUnlocked(block);
                 }
             }
         }

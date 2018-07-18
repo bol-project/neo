@@ -41,6 +41,8 @@ namespace Neo.Consensus
                 TransactionHashes = null;
                 Signatures = new byte[Validators.Length][];
             }
+            if (MyIndex >= 0)
+                ExpectedView[MyIndex] = view_number;
             _header = null;
         }
 
