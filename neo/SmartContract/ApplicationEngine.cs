@@ -459,8 +459,59 @@ namespace Neo.SmartContract
             return count;
         }
 
+        public static byte[] _bolScript = null;
+        public byte[] BolScript
+        {
+            get
+            {
+                if (_bolScript == null)
+                {
+                    var bolSettings = ProtocolSettings.Default.BolSettings;
+                    byte[] script = System.IO.File.ReadAllBytes(bolSettings.Path);
+                    byte[] parameter_list = "0710".HexToBytes();
+                    var return_type = ContractParameterType.ByteArray;
+                    var properties = ContractPropertyState.HasStorage;
+
+                    using (var sb = new ScriptBuilder())
+                    {
+                        sb.EmitSysCall(
+                            "Neo.Contract.Create",
+                            script, parameter_list,
+                            return_type, properties,
+                            bolSettings.Name,
+                            bolSettings.Version,
+                            bolSettings.Author,
+                            bolSettings.Email,
+                            bolSettings.Description
+                            );
+                        _bolScript = sb.ToArray();
+                    }
+                }
+                return _bolScript;
+            }
+        }
+
+        public static byte[] _bolScriptHash = null;
+        public byte[] BolScriptHash
+        {
+            get
+            {
+                if (_bolScriptHash == null)
+                {
+                    _bolScriptHash = ProtocolSettings.Default.BolSettings.ScriptHash.HexToBytes();
+                }
+                return _bolScriptHash;
+            }
+        }
+
         protected virtual long GetPrice(OpCode nextInstruction)
         {
+            var currentScriptEnd = CurrentContext.Script.Skip(CurrentContext.Script.Length - 20);
+            if (currentScriptEnd.SequenceEqual(BolScriptHash) || CurrentContext.Script.SequenceEqual(BolScript))
+            {
+                return 0;
+            }
+
             if (nextInstruction <= OpCode.NOP) return 0;
             switch (nextInstruction)
             {
