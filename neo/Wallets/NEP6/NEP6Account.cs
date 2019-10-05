@@ -3,7 +3,7 @@ using System;
 
 namespace Neo.Wallets.NEP6
 {
-    internal class NEP6Account : WalletAccount
+    public class NEP6Account : WalletAccount
     {
         private readonly NEP6Wallet wallet;
         private readonly string nep2key;
