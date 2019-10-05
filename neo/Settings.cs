@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Neo.Network.P2P.Payloads;
 using System;
 using System.Collections.Generic;
@@ -15,6 +15,7 @@ namespace Neo
         public IReadOnlyDictionary<TransactionType, Fixed8> SystemFee { get; }
         public Fixed8 LowPriorityThreshold { get; }
         public uint SecondsPerBlock { get; }
+        public BolContractSetings BolSettings { get; }
 
         public static ProtocolSettings Default { get; }
 
@@ -33,6 +34,7 @@ namespace Neo
             this.SystemFee = section.GetSection("SystemFee").GetChildren().ToDictionary(p => (TransactionType)Enum.Parse(typeof(TransactionType), p.Key, true), p => Fixed8.Parse(p.Value));
             this.SecondsPerBlock = GetValueOrDefault(section.GetSection("SecondsPerBlock"), 15u, p => uint.Parse(p));
             this.LowPriorityThreshold = GetValueOrDefault(section.GetSection("LowPriorityThreshold"), Fixed8.FromDecimal(0.001m), p => Fixed8.Parse(p));
+            this.BolSettings = section.GetSection("BolContract").Get<BolContractSetings>();
         }
 
         internal T GetValueOrDefault<T>(IConfigurationSection section, T defaultValue, Func<string, T> selector)
@@ -40,5 +42,16 @@ namespace Neo
             if (section.Value == null) return defaultValue;
             return selector(section.Value);
         }
+    }
+
+    public class BolContractSetings
+    {
+        public string ScriptHash { get; set; }
+        public string Name { get; set; }
+        public string Version { get; set; }
+        public string Author { get; set; }
+        public string Email { get; set; }
+        public string Description { get; set; }
+        public string Path { get; set; }
     }
 }
