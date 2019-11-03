@@ -55,6 +55,8 @@ namespace Neo.SmartContract
         private int stackitem_count = 0;
         private bool is_stackitem_count_strict = true;
 
+        private bool isBolInvocation = false;
+
         public Fixed8 GasConsumed => new Fixed8(gas_consumed);
         public new NeoService Service => (NeoService)base.Service;
 
@@ -506,8 +508,7 @@ namespace Neo.SmartContract
 
         protected virtual long GetPrice(OpCode nextInstruction)
         {
-            var currentScriptEnd = CurrentContext.Script.Skip(CurrentContext.Script.Length - 20);
-            if (currentScriptEnd.SequenceEqual(BolScriptHash) || CurrentContext.Script.SequenceEqual(BolScript))
+            if (isBolInvocation)
             {
                 return 0;
             }
@@ -599,9 +600,19 @@ namespace Neo.SmartContract
 
         private bool PreStepInto(OpCode nextOpcode)
         {
+            if (!isBolInvocation)
+            {
+                var currentScriptEnd = CurrentContext.Script.Skip(CurrentContext.Script.Length - 20).Reverse().ToArray();
+                if (currentScriptEnd.SequenceEqual(BolScriptHash) || CurrentContext.Script.SequenceEqual(BolScript))
+                {
+                    isBolInvocation = true;
+                }
+            }
+
             if (CurrentContext.InstructionPointer >= CurrentContext.Script.Length)
                 return true;
             gas_consumed = checked(gas_consumed + GetPrice(nextOpcode) * ratio);
+
             if (!testMode && gas_consumed > gas_amount) return false;
             if (!CheckItemSize(nextOpcode)) return false;
             if (!CheckArraySize(nextOpcode)) return false;
