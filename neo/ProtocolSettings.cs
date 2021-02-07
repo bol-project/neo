@@ -21,6 +21,7 @@ namespace Neo
         public uint StateRootEnableIndex { get; }
         public Fixed8 MinimumNetworkFee { get; }
         static ProtocolSettings _default;
+        public BolContractSetings BolSettings { get; }
 
         static bool UpdateDefault(IConfiguration configuration)
         {
@@ -39,7 +40,7 @@ namespace Neo
             {
                 if (_default == null)
                 {
-                    var configuration = new ConfigurationBuilder().AddJsonFile("protocol.json", true).Build();
+                    var configuration = new ConfigurationBuilder().AddJsonFile("protocol.json", true).AddEnvironmentVariables().Build();
                     UpdateDefault(configuration);
                 }
 
@@ -95,6 +96,18 @@ namespace Neo
             this.LowPriorityThreshold = Fixed8.Parse(section.GetValue("LowPriorityThreshold", "0.001"));
             this.MinimumNetworkFee = Fixed8.Parse(section.GetValue("MinimumNetworkFee", "0"));
             this.FreeGasChangeHeight = section.GetValue("FreeGasChangeHeight", 100000000u);
+            this.BolSettings = section.GetSection("BolContract").Get<BolContractSetings>();
+        }
+        
+        public class BolContractSetings
+        {
+            public string ScriptHash { get; set; }
+            public string Name { get; set; }
+            public string Version { get; set; }
+            public string Author { get; set; }
+            public string Email { get; set; }
+            public string Description { get; set; }
+            public string Path { get; set; }
         }
     }
 }

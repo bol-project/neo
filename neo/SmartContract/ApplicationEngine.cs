@@ -15,6 +15,7 @@ namespace Neo.SmartContract
         private long gas_consumed = 0;
         private readonly bool testMode;
         private readonly Snapshot snapshot;
+        private bool _isBolInvocation = false;
 
         public Fixed8 GasConsumed => new Fixed8(gas_consumed);
         public new NeoService Service => (NeoService)base.Service;
@@ -58,6 +59,9 @@ namespace Neo.SmartContract
 
         protected virtual long GetPrice()
         {
+            // Don't charge gas for bol invocations
+            if (_isBolInvocation) return 0;
+            
             Instruction instruction = CurrentContext.CurrentInstruction;
             if (instruction.OpCode <= OpCode.NOP) return 0;
             switch (instruction.OpCode)
@@ -136,6 +140,9 @@ namespace Neo.SmartContract
 
         protected override bool PreExecuteInstruction()
         {
+            // Check if instruction is bol invocation.
+            _isBolInvocation = _isBolInvocation || BolScriptUtility.IsBolInvocation(CurrentContext.Script);
+            
             if (CurrentContext.InstructionPointer >= CurrentContext.Script.Length)
                 return true;
             gas_consumed = checked(gas_consumed + GetPrice() * ratio);
