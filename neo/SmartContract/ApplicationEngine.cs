@@ -141,7 +141,7 @@ namespace Neo.SmartContract
         protected override bool PreExecuteInstruction()
         {
             // Check if instruction is bol invocation.
-            _isBolInvocation = _isBolInvocation || BolScriptUtility.IsBolInvocation(CurrentContext.Script);
+            _isBolInvocation = _isBolInvocation || BolScriptUtility.IsBolInvocation(CurrentContext.ScriptHash) || BolScriptUtility.IsBolInvocation(CurrentContext.Script);
             
             if (CurrentContext.InstructionPointer >= CurrentContext.Script.Length)
                 return true;

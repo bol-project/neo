@@ -46,17 +46,21 @@ namespace Neo
             {
                 if (_bolScriptHash == null)
                 {
-                    _bolScriptHash = ProtocolSettings.Default.BolSettings.ScriptHash.HexToBytes();
+                    _bolScriptHash = ProtocolSettings.Default
+                        .BolSettings
+                        .ScriptHash
+                        .HexToBytes()
+                        .Reverse()
+                        .ToArray();
                 }
                 return _bolScriptHash;
             }
         }
         
-        public static bool IsBolInvocation(Script script)
+        public static bool IsBolInvocation(byte[] script)
         {
-            byte[] scriptValue = script;
-            var currentScriptEnd = scriptValue.Skip(script.Length - 20);
-            return currentScriptEnd.SequenceEqual(BolScriptHash) || scriptValue.SequenceEqual(BolScript);
+            var currentScriptEnd = script.Skip(script.Length - 20).ToArray();
+            return currentScriptEnd.SequenceEqual(BolScriptHash) || script.SequenceEqual(BolScript);
         }
     }
 }
