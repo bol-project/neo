@@ -89,6 +89,8 @@ namespace Neo.Ledger
                 },
                 GoverningToken,
                 UtilityToken,
+                BolScriptUtility.BolToken,
+                BolScriptUtility.BolDeploy,
                 new IssueTransaction
                 {
                     Attributes = new TransactionAttribute[0],
