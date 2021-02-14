@@ -81,7 +81,7 @@ namespace Neo.Ledger
             {
                 new MinerTransaction
                 {
-                    Nonce = 2083236893,
+                    Nonce = 4345676,
                     Attributes = new TransactionAttribute[0],
                     Inputs = new CoinReference[0],
                     Outputs = new TransactionOutput[0],
