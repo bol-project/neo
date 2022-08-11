@@ -448,7 +448,7 @@ namespace Neo.Network.RPC
 
         public void Start(IPAddress bindAddress, int port, string sslCert = null, string password = null, string[] trustedAuthorities = null, int maxConcurrentConnections = 40)
         {
-            host = new WebHostBuilder().UseKestrel(options => options.Listen(bindAddress, port, listenOptions =>
+            host = new WebHostBuilder().UseKestrel(options => {options.Listen(bindAddress, port, listenOptions =>
             {
                 // Default value is unlimited
                 if (maxConcurrentConnections == 0)
@@ -478,7 +478,9 @@ namespace Neo.Network.RPC
                         return trustedAuthorities.Contains(authority.Thumbprint);
                     };
                 });
-            }))
+            });
+            options.AllowSynchronousIO = true;
+            })
             .Configure(app =>
             {
                 app.UseResponseCompression();
