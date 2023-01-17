@@ -229,19 +229,17 @@ namespace Neo.SmartContract
                     {
                         context.Add(parameter);
                         StringBuilder sb = new StringBuilder();
-                        sb.Append('[');
+                        sb.Append('{');
                         foreach (var item in data)
                         {
-                            sb.Append('{');
                             sb.Append(ToString(item.Key, context));
-                            sb.Append(',');
+                            sb.Append(':');
                             sb.Append(ToString(item.Value, context));
-                            sb.Append('}');
                             sb.Append(", ");
                         }
                         if (data.Count > 0)
                             sb.Length -= 2;
-                        sb.Append(']');
+                        sb.Append('}');
                         return sb.ToString();
                     }
                 default:
