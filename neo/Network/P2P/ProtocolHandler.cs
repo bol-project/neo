@@ -370,6 +370,7 @@ namespace Neo.Network.P2P
 
         private void OnTimer()
         {
+            StateRootSentIndex = ProtocolSettings.Default.StateRootEnableIndex;
             RefreshPendingKnownHashes();
         }
 
