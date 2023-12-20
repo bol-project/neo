@@ -68,7 +68,7 @@ namespace Neo.Ledger
         public static readonly Block GenesisBlock = new Block
         {
             PrevHash = UInt256.Parse("D3723E2573F2A15A6101CDA6540CAE4523ABB8BB21D3BEB62CBC5D9C8614087D"), //Bol Ruleset Hash
-            Timestamp = (new DateTime(2021, 2, 10, 16, 30, 0, DateTimeKind.Utc)).ToTimestamp(),
+            Timestamp = (new DateTime(2023, 12, 20, 16, 30, 0, DateTimeKind.Utc)).ToTimestamp(),
             Index = 0,
             ConsensusData = 7745883560, //Global World Population
             NextConsensus = GetConsensusAddress(StandbyValidators),
