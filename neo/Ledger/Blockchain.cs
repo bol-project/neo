@@ -1,4 +1,4 @@
-﻿using Akka.Actor;
+using Akka.Actor;
 using Akka.Configuration;
 using Neo.Cryptography.ECC;
 using Neo.IO;
@@ -67,10 +67,10 @@ namespace Neo.Ledger
 
         public static readonly Block GenesisBlock = new Block
         {
-            PrevHash = UInt256.Parse("D3723E2573F2A15A6101CDA6540CAE4523ABB8BB21D3BEB62CBC5D9C8614087D"), //Bol Ruleset Hash
-            Timestamp = (new DateTime(2023, 12, 20, 16, 30, 0, DateTimeKind.Utc)).ToTimestamp(),
+            PrevHash = UInt256.Parse("E9B08F5BC414F79E801D5CEFFF038B9660CFFF63C49F3A87800154BBEDB8DAA2"), //Bol Ruleset Hash
+            Timestamp = (new DateTime(2023, 12, 20, 16, 30, 0, DateTimeKind.Utc)).ToTimestamp(),  // To update at genesis
             Index = 0,
-            ConsensusData = 7745883560, //Global World Population
+            ConsensusData = 8089107236, //Global World Population  // To update at genesis
             NextConsensus = GetConsensusAddress(StandbyValidators),
             Witness = new Witness
             {
