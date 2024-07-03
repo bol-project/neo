@@ -41,7 +41,7 @@ namespace Neo.Network.P2P
         private static readonly TimeSpan TimerInterval = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan PendingTimeout = TimeSpan.FromMinutes(1);
 
-        private readonly ICancelable timer = Context.System.Scheduler.ScheduleTellRepeatedlyCancelable(TimerInterval, TimerInterval, Context.Self, new Timer(), ActorRefs.NoSender);
+        private readonly System.Timers.Timer timer;
 
         public ProtocolHandler(NeoSystem system)
         {
@@ -50,6 +50,10 @@ namespace Neo.Network.P2P
             this.knownHashes = new FIFOSet<UInt256>(Blockchain.Singleton.MemPool.Capacity * 2);
             this.sentHashes = new FIFOSet<UInt256>(Blockchain.Singleton.MemPool.Capacity * 2);
             this.StateRootSentIndex = ProtocolSettings.Default.StateRootEnableIndex;
+            this.timer = new System.Timers.Timer(TimerInterval);
+            this.timer.Elapsed += (_,_) => OnTimer();
+            this.timer.AutoReset = true;
+            this.timer.Enabled = true;
         }
 
         protected override void OnReceive(object message)
@@ -59,7 +63,7 @@ namespace Neo.Network.P2P
                 case Message msg:
                     OnMessage(msg);
                     break;
-                case Timer _:
+                case Timer:
                     OnTimer();
                     break;
             }
@@ -376,7 +380,8 @@ namespace Neo.Network.P2P
 
         protected override void PostStop()
         {
-            timer.CancelIfNotNull();
+            timer.Enabled = false;
+            timer.Close();
             base.PostStop();
         }
 
